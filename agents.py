@@ -2,14 +2,15 @@ from mesa import Agent
 import math
 
 class MissileAgent(Agent):
-    def __init__(self, model, pos, speed, fuel, direction=None):
-        super().__init__(model) # Mesa 3.0 assigns unique_id
+    def __init__(self, model, pos, direction, speed, fuel):
+        super().__init__(model)
         self.pos = pos
         self.direction = direction
         self.speed = speed
         self.fuel = fuel
         self.exploded = False
         self.alive = True
+        print(f"Missile {self.unique_id} created with fuel: {self.fuel}")
 
     
     def step(self):
