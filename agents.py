@@ -23,7 +23,6 @@ class MissileAgent(Agent):
             dy = target.pos[1] - self.pos[1]
             magnitude = math.hypot(dx, dy)
             self.direction = (dx / magnitude, dy / magnitude) if magnitude != 0 else (0, 0)
-            #print(f"Missile {self.unique_id} at {self.pos} with direction {self.direction}")
 
         self.fuel -= 1
         if self.fuel <= 0:
@@ -45,9 +44,10 @@ class MissileAgent(Agent):
 
         print(f"Missile {self.unique_id} moved to {new_pos}")
 
-        cellmates = self.model.grid.get_cell_list_contents([new_pos])
+        # Check whether the missile has hit its target after moving
+        cellmates = self.model.grid.get_cell_list_contents([new_pos]) # retrieves all agents at the missile’s new positio
         for other in cellmates:
-            if isinstance(other, TargetAgent):
+            if isinstance(other, TargetAgent): # Check if any of the agents in the cell is a TargetAgent
                 self.exploded = True
                 self.alive = False
                 return

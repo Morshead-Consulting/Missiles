@@ -13,6 +13,8 @@ grid_height = model.value.grid.height
 
 @solara.component
 def MissileGrid():
+    _ = step_count.value
+
     fig, ax = plt.subplots(figsize=(10, 2))
     ax.set_xlim(0, grid_width)
     ax.set_ylim(0, grid_height)
