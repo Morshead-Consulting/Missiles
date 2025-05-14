@@ -1,5 +1,6 @@
 from mesa import Agent
 import math
+import random
 
 class MissileAgent(Agent):
     def __init__(self, model, pos, direction, speed, fuel):
@@ -60,22 +61,35 @@ class TargetAgent(Agent):
     def __init__(self, model, pos):
         super().__init__(model)
         self.pos = pos
-        self.start_step = 35
-        self.end_step = 75
+        self.start_step = 0
+        self.end_step = 95
         self.start_y = pos[1]
-        self.end_y = model.grid.height - 1
+        self.end_y = model.grid.height - 1  # or whatever you prefer
+        self.current_step = 0
 
     def step(self):
-        current_step = self.model.steps
+        self.current_step += 1
 
-        # Only move if we're between start and end step
-        if self.start_step <= current_step <= self.end_step:
-            # Compute how far along the movement is (from 0.0 to 1.0)
-            progress = (current_step - self.start_step) / (self.end_step - self.start_step)
+        if self.start_step <= self.current_step <= self.end_step:
+            remaining_steps = self.end_step - self.current_step + 1
+            current_y = self.pos[1]
+            distance_left = self.end_y - current_y
 
-            # Compute new Y position by interpolating
-            new_y = round(self.start_y + (self.end_y - self.start_y) * progress)
-            new_pos = (self.model.grid.width - 1, new_y)
+            if remaining_steps <= 0:
+                return  # Movement complete
+
+            # Compute max possible movement this step without overshooting
+            max_step = distance_left / remaining_steps
+
+            # Add randomness: vary move by ±50% (bounded)
+            min_step = max(0, max_step * 0.5)
+            max_step = max_step * 1.5
+            move_y = random.uniform(min_step, max_step)
+
+            new_y = current_y + move_y
+            new_y = min(self.model.grid.height - 1, int(round(new_y)))
+
+            new_pos = (self.pos[0], new_y)
 
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
