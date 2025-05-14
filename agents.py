@@ -17,13 +17,12 @@ class MissileAgent(Agent):
         if not self.alive:
             return
 
-        if self.direction is None:
-            # Compute direction to target
-            target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
-            dx = target.pos[0] - self.pos[0]
-            dy = target.pos[1] - self.pos[1]
-            magnitude = math.hypot(dx, dy)
-            self.direction = (dx / magnitude, dy / magnitude) if magnitude != 0 else (0, 0)
+        # Always compute direction to the current target position
+        target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
+        dx = target.pos[0] - self.pos[0]
+        dy = target.pos[1] - self.pos[1]
+        magnitude = math.hypot(dx, dy)
+        self.direction = (dx / magnitude, dy / magnitude) if magnitude != 0 else (0, 0)
 
         self.fuel -= 1
         if self.fuel <= 0:
@@ -41,8 +40,7 @@ class MissileAgent(Agent):
         new_pos = (new_x, new_y)
 
         if self.alive:
-            self.trail.append(self.pos)  # ← record current position before move
-
+            self.trail.append(self.pos)  # Record trail for visualisation
 
         self.model.grid.move_agent(self, new_pos)
         self.pos = new_pos
@@ -60,7 +58,25 @@ class MissileAgent(Agent):
 
 class TargetAgent(Agent):
     def __init__(self, model, pos):
-        super().__init__(model)  # Pass model to the base class (Mesa)
-        
+        super().__init__(model)
+        self.pos = pos
+        self.start_step = 35
+        self.end_step = 75
+        self.start_y = pos[1]
+        self.end_y = model.grid.height - 1
+
     def step(self):
-        pass  # No action for the target
+        current_step = self.model.steps
+
+        # Only move if we're between start and end step
+        if self.start_step <= current_step <= self.end_step:
+            # Compute how far along the movement is (from 0.0 to 1.0)
+            progress = (current_step - self.start_step) / (self.end_step - self.start_step)
+
+            # Compute new Y position by interpolating
+            new_y = round(self.start_y + (self.end_y - self.start_y) * progress)
+            new_pos = (self.model.grid.width - 1, new_y)
+
+            if new_pos != self.pos:
+                self.model.grid.move_agent(self, new_pos)
+                self.pos = new_pos
