@@ -26,8 +26,13 @@ def MissileGrid():
     for agent in model.value.agents:
         if isinstance(agent, MissileAgent):
             color = "red" if agent.exploded else "blue"
+            if agent.alive and len(agent.trail) > 1:
+                xs, ys = zip(*agent.trail)
+                ax.plot([x + 0.5 for x in xs], [y + 0.5 for y in ys], color=color, linewidth=1, alpha=0.5)
+            
             if agent.alive:
                 ax.plot(agent.pos[0] + 0.5, agent.pos[1] + 0.5, "o", color=color)
+
         elif isinstance(agent, TargetAgent):
             ax.plot(agent.pos[0] + 0.5, agent.pos[1] + 0.5, "s", color="green")
 

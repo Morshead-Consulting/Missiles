@@ -10,6 +10,7 @@ class MissileAgent(Agent):
         self.fuel = fuel
         self.exploded = False
         self.alive = True
+        self.trail = [pos]
     
     def step(self):
         print(f"Missile {self.unique_id} stepping. Alive: {self.alive}, Fuel: {self.fuel}")
@@ -38,6 +39,10 @@ class MissileAgent(Agent):
         new_x = int(round(self.float_pos[0])) % self.model.grid.width
         new_y = int(round(self.float_pos[1])) % self.model.grid.height
         new_pos = (new_x, new_y)
+
+        if self.alive:
+            self.trail.append(self.pos)  # ← record current position before move
+
 
         self.model.grid.move_agent(self, new_pos)
         self.pos = new_pos
