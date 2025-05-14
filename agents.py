@@ -4,14 +4,12 @@ import math
 class MissileAgent(Agent):
     def __init__(self, model, pos, direction, speed, fuel):
         super().__init__(model)
-        self.pos = pos
+        #self.pos = pos
         self.direction = direction
         self.speed = speed
         self.fuel = fuel
         self.exploded = False
         self.alive = True
-        print(f"Missile {self.unique_id} created with fuel: {self.fuel}")
-
     
     def step(self):
         print(f"Missile {self.unique_id} stepping. Alive: {self.alive}, Fuel: {self.fuel}")
@@ -25,7 +23,7 @@ class MissileAgent(Agent):
             dy = target.pos[1] - self.pos[1]
             magnitude = math.hypot(dx, dy)
             self.direction = (dx / magnitude, dy / magnitude) if magnitude != 0 else (0, 0)
-            print(f"Missile {self.unique_id} has direction {self.direction}")
+            #print(f"Missile {self.unique_id} at {self.pos} with direction {self.direction}")
 
         self.fuel -= 1
         if self.fuel <= 0:
@@ -58,7 +56,6 @@ class MissileAgent(Agent):
 class TargetAgent(Agent):
     def __init__(self, model, pos):
         super().__init__(model)  # Pass model to the base class (Mesa)
-        self.pos = pos  # Initialize position
-
+        
     def step(self):
         pass  # No action for the target
