@@ -25,6 +25,7 @@ class MissileAgent(Agent):
             dy = target.pos[1] - self.pos[1]
             magnitude = math.hypot(dx, dy)
             self.direction = (dx / magnitude, dy / magnitude) if magnitude != 0 else (0, 0)
+            print(f"Missile {self.unique_id} has direction {self.direction}")
 
         self.fuel -= 1
         if self.fuel <= 0:

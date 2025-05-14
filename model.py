@@ -23,7 +23,7 @@ class NavalModel(Model):
             direction = (1, 0)  # Missiles initially move right
             speed = 1
             fuel = 100
-            missile = MissileAgent(self, pos, direction, speed, fuel)  # Don't need to manually pass ID
+            missile = MissileAgent(model=self, pos=pos, direction=None, speed=1, fuel=10)  # Don't need to manually pass ID
             self.grid.place_agent(missile, pos)
             self.agents.add(missile)  # Add missile to the AgentSet
 
