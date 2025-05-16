@@ -18,8 +18,10 @@ class MissileAgent(Agent):
         if not self.alive:
             return
 
-        # Always compute direction to the current target position
+        # Compute direction to the current target position
         target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
+        # Direction is calculated each tick as a unit vector
+        # Unit vector points from the missile’s current location to the target
         dx = target.pos[0] - self.pos[0]
         dy = target.pos[1] - self.pos[1]
         magnitude = math.hypot(dx, dy)
@@ -33,9 +35,13 @@ class MissileAgent(Agent):
         if not hasattr(self, "float_pos"):
             self.float_pos = list(self.pos)
 
+        # speed is a scalar (e.g. 1.2 or 0.5), interpreted as distance units per tick
+        # In each tick, the missile travels speed * direction
+        # self.float_pos tracks the true floating-point position for accuracy
         self.float_pos[0] += self.direction[0] * self.speed
         self.float_pos[1] += self.direction[1] * self.speed
 
+        # Update to self.pos (as the grid is discrete)
         new_x = int(round(self.float_pos[0])) % self.model.grid.width
         new_y = int(round(self.float_pos[1])) % self.model.grid.height
         new_pos = (new_x, new_y)
