@@ -24,7 +24,13 @@ class NavalModel(Model):
         y_coords = [int(i * height / num_missiles) for i in range(num_missiles)]
         for y in y_coords:
             pos = (0, y)
-            missile = MissileAgent(model=self, pos=pos, direction=None, speed=1, fuel=100)  # Don't need to manually pass ID
+            missile = MissileAgent(model=self,
+                pos=pos,
+                direction=None,
+                speed=1,
+                fuel=100,
+                estimated_target_pos=[90, 15]
+                )  
             self.grid.place_agent(missile, pos)
             self.agents.add(missile)  # Add missile to the AgentSet
             print(f"Missile id {missile.unique_id} created with fuel: {missile.fuel} at {missile.pos}") # report details of creation
