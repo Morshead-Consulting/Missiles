@@ -29,7 +29,7 @@ class NavalModel(Model):
                 direction=None,
                 speed=1,
                 fuel=100,
-                estimated_target_pos=[90, 15]
+                initial_target_estimate=[90, 15]
                 )  
             self.grid.place_agent(missile, pos)
             self.agents.add(missile)  # Add missile to the AgentSet

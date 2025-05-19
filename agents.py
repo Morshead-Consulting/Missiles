@@ -14,7 +14,6 @@ class MissileAgent(Agent):
         self.alive = True
         self.trail = [pos]
         self.sensor = Sensor(range=30, field_of_view_deg=90, noise_std=0.5)
-
         self.pos = pos
         self.float_pos = list(pos)
 
