@@ -23,6 +23,9 @@ class TargetReportingUnit(Agent):
 
         self.estimated_target_pos = None
 
+        # This will store the freshest target position estimate for missiles
+        self.latest_estimate = None
+
     def step(self):
         print(f"TRU {self.unique_id} stepping at pos {self.pos}")
 
@@ -30,12 +33,22 @@ class TargetReportingUnit(Agent):
         target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
         detected, noisy_rel = self.sensor.run_detection(self.pos, self.direction, target.pos)
 
+        # Recalculate direction to point toward the actual target each time
+        dx = target.pos[0] - self.pos[0]
+        dy = target.pos[1] - self.pos[1]
+        mag = math.hypot(dx, dy)
+        if mag > 0:
+            self.direction = (dx / mag, dy / mag)
+
         if detected:
             dx, dy = noisy_rel
             new_est_x = self.pos[0] + dx
             new_est_y = self.pos[1] + dy
             self.estimated_target_pos = [new_est_x, new_est_y]
-            print(f"TRU id {self.unique_id} estimated target at {self.estimated_target_pos}")
+            self.latest_estimate = list(self.estimated_target_pos)  # update latest estimate here
+            print(f"TRU id {self.unique_id} detected target. New estimate: {self.estimated_target_pos}")
+        else:
+            print(f"TRU id {self.unique_id} did NOT detect target at step {self.model.steps}")
 
         # Move in holding pattern (circular or oscillating motion)
         self.angle += math.radians(10)  # adjust to control speed of rotation
