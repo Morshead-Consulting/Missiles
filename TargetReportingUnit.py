@@ -19,7 +19,7 @@ class TargetReportingUnit(Agent):
         self.direction = direction if direction is not None else (1, 0)
 
         # Longer-range sensor
-        self.sensor = Sensor(range=50, field_of_view_deg=120, noise_std=0.3)
+        self.sensor = Sensor(range=100, field_of_view_deg=120, noise_std=0.3)
 
         self.estimated_target_pos = None
 

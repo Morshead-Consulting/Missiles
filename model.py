@@ -4,12 +4,12 @@ from agents import MissileAgent, TargetAgent
 from TargetReportingUnit import TargetReportingUnit
 
 class NavalModel(Model):
-    def __init__(self, width=100, height=20, num_missiles=25, seed=None):
+    def __init__(self, width=250, height=60, num_missiles=25, seed=None):
         super().__init__(seed=seed)
 
         self.width = width
         self.height = height
-        self.grid = MultiGrid(width, height, torus=True)
+        self.grid = MultiGrid(width, height, torus=False)
 
         # Create and add the Target agent
         print("Creating the Target...")
@@ -20,7 +20,7 @@ class NavalModel(Model):
         print(f"Target id {target.unique_id} has been created at {target.pos}") # report details of creation
 
         # Create the TRU (Target Reporting Unit)
-        tru_start_pos = (target_pos[0] - 15, target_pos[1])  # offset from target but within bounds
+        tru_start_pos = (target_pos[0] - 65, target_pos[1])  # offset from target but within bounds
         tru = TargetReportingUnit(
             model=self,
             pos=tru_start_pos,
@@ -41,7 +41,7 @@ class NavalModel(Model):
                 pos=pos,
                 direction=None,
                 speed=1,
-                fuel=100,
+                fuel=400,
                 initial_target_estimate=[90, 15]
                 )  
             self.grid.place_agent(missile, pos)
