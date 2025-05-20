@@ -1,6 +1,9 @@
 import solara
 import matplotlib.pyplot as plt
 import numpy as np
+import time
+import threading
+
 from model import NavalModel
 from agents import MissileAgent, TargetAgent
 from TargetReportingUnit import TargetReportingUnit
@@ -44,22 +47,41 @@ def MissileGrid():
 
 
 @solara.component
+@solara.component
 def MissileDashboard():
     solara.Title("Naval Missile Simulation")
+    running = solara.reactive(False)  # new state to track play/pause
+
+    def auto_step():
+        while running.value:
+            model.value.step()
+            step_count.value += 1
+            time.sleep(0.5)  # Adjust speed here
+
+    def start():
+        running.value = True
+        threading.Thread(target=auto_step, daemon=True).start()
+
+    def stop():
+        running.value = False
+
+    def step():
+        model.value.step()
+        step_count.value += 1
+
+    def reset():
+        model.value = NavalModel()
+        step_count.value = 0
+        running.value = False
+
     with solara.Column():
         solara.Markdown(f"**Step:** {step_count.value}")
         MissileGrid()
 
         with solara.Row():
-            def step():
-                model.value.step()
-                step_count.value += 1
-
-            def reset():
-                model.value = NavalModel()
-                step_count.value = 0
-
             solara.Button("Step", on_click=step)
+            solara.Button("Start", on_click=start)
+            solara.Button("Stop", on_click=stop)
             solara.Button("Reset", on_click=reset)
 
 @solara.component
