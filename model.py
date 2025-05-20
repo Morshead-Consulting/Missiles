@@ -25,8 +25,7 @@ class NavalModel(Model):
             model=self,
             pos=tru_start_pos,
             direction=None,
-            speed=1,
-            holding_radius=10  # orbit radius
+            speed=1
         )
         self.agents.add(tru)
         self.grid.place_agent(tru, tru_start_pos)
