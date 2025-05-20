@@ -28,7 +28,7 @@ class MissileAgent(Agent):
             self.estimated_target_pos = None
 
         # Distance at which missile switches to own sensor
-        self.sensor_switch_distance = 10.0
+        self.sensor_switch_distance = 20.0
 
     def update_target_estimate(self, new_estimate):
         self.estimated_target_pos = list(new_estimate)
@@ -106,39 +106,34 @@ class MissileAgent(Agent):
                 return
 
 class TargetAgent(Agent):
-    def __init__(self, model, pos):
+    def __init__(self, model, pos, speed=1):
         super().__init__(model)
         self.pos = pos
-        self.start_step = 0
-        self.end_step = 95
-        self.start_y = pos[1]
-        self.end_y = model.grid.height - 1  # or whatever you prefer
-        self.current_step = 0
+        self.float_y = pos[1]  # for smooth movement
+        self.speed = speed
+
+        self.direction = 1  # 1 for up, -1 for down
+        self.steps_remaining_in_phase = random.randint(5, 20)
 
     def step(self):
-        self.current_step += 1
+        # If we finished the current phase, pick a new one with opposite direction
+        if self.steps_remaining_in_phase <= 0:
+            self.direction *= -1
+            self.steps_remaining_in_phase = random.randint(5, 20)
 
-        if self.start_step <= self.current_step <= self.end_step:
-            remaining_steps = self.end_step - self.current_step + 1
-            current_y = self.pos[1]
-            distance_left = self.end_y - current_y
+        # Move by `speed` in current direction
+        self.float_y += self.direction * self.speed
 
-            if remaining_steps <= 0:
-                return  # Movement complete
+        # Clamp to grid boundaries
+        self.float_y = max(0, min(self.model.grid.height - 1, self.float_y))
 
-            # Compute max possible movement this step without overshooting
-            max_step = distance_left / remaining_steps
+        # Convert to int grid coordinates
+        new_y = int(round(self.float_y))
+        new_pos = (self.pos[0], new_y)
 
-            # Add randomness: vary move by ±50% (bounded)
-            min_step = max(0, max_step * 0.5)
-            max_step = max_step * 1.5
-            move_y = random.uniform(min_step, max_step)
+        if new_pos != self.pos:
+            self.model.grid.move_agent(self, new_pos)
+            self.pos = new_pos
 
-            new_y = current_y + move_y
-            new_y = min(self.model.grid.height - 1, int(round(new_y)))
+        self.steps_remaining_in_phase -= 1
 
-            new_pos = (self.pos[0], new_y)
-
-            if new_pos != self.pos:
-                self.model.grid.move_agent(self, new_pos)
-                self.pos = new_pos

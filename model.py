@@ -14,7 +14,7 @@ class NavalModel(Model):
         # Create and add the Target agent
         print("Creating the Target...")
         target_pos = (width - 1, height // 2)
-        target = TargetAgent(self, target_pos)  # Pass model (self) and position
+        target = TargetAgent(model=self, pos=(50, 0), speed=0.5)
         self.agents.add(target)  # unique_id assigned here
         self.grid.place_agent(target, target_pos)
         print(f"Target id {target.unique_id} has been created at {target.pos}")  # report details of creation
