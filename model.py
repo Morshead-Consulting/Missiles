@@ -1,6 +1,7 @@
 from mesa import Model
 from mesa.space import MultiGrid
 from agents import MissileAgent, TargetAgent
+from TargetReportingUnit import TargetReportingUnit
 
 class NavalModel(Model):
     def __init__(self, width=100, height=20, num_missiles=25, seed=None):
@@ -18,6 +19,18 @@ class NavalModel(Model):
         self.grid.place_agent(target, target_pos)
         print(f"Target id {target.unique_id} has been created at {target.pos}") # report details of creation
 
+        # Create the TRU (Target Reporting Unit)
+        tru_start_pos = (target_pos[0] - 15, target_pos[1])  # offset from target but within bounds
+        tru = TargetReportingUnit(
+            model=self,
+            pos=tru_start_pos,
+            direction=None,
+            speed=1,
+            holding_radius=10  # orbit radius
+        )
+        self.agents.add(tru)
+        self.grid.place_agent(tru, tru_start_pos)
+        print(f"TRU id {tru.unique_id} has been created at {tru.pos}")
 
         # Create and add Missile agents
         print("Creating missiles...")

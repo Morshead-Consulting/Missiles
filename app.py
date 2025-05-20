@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from model import NavalModel
 from agents import MissileAgent, TargetAgent
+from TargetReportingUnit import TargetReportingUnit
 
 # Reactive state
 step_count = solara.reactive(0)
@@ -22,7 +23,7 @@ def MissileGrid():
     ax.set_yticks([])
     ax.set_aspect("equal")
 
-    # Plot all missiles
+    # Plot all agents
     for agent in model.value.agents:
         if isinstance(agent, MissileAgent):
             color = "red" if agent.exploded else "blue"
@@ -35,6 +36,9 @@ def MissileGrid():
 
         elif isinstance(agent, TargetAgent):
             ax.plot(agent.pos[0] + 0.5, agent.pos[1] + 0.5, "s", color="green")
+        
+        elif isinstance(agent, TargetReportingUnit):
+            ax.plot(agent.pos[0] + 0.5, agent.pos[1] + 0.5, "^", color="purple")
 
     return solara.FigureMatplotlib(fig)
 

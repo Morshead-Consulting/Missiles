@@ -26,7 +26,6 @@ class MissileAgent(Agent):
         # Set direction: use provided, or default to (1, 0)
         self.direction = direction if direction is not None else (1, 0)
 
-
     def update_target_estimate(self, new_estimate):
         """External method to inject a new estimate of target position."""
         self.estimated_target_pos = list(new_estimate)
