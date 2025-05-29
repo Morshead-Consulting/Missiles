@@ -1,7 +1,9 @@
 from mesa.model import Model
 from mesa.space import MultiGrid
+
 from agents import MissileAgent, TargetAgent
 from TargetReportingUnit import TargetReportingUnit
+
 
 class NavalModel(Model):
     def __init__(self, width=250, height=60, num_missiles=25, seed=None):

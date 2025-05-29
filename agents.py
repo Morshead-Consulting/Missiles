@@ -1,11 +1,10 @@
-from mesa import Agent
 import math
 import random
 
+from mesa import Agent
+
 from sensor import Sensor
 
-import math
-from mesa import Agent
 
 class MissileAgent(Agent):
     def __init__(self, model, pos, direction, speed, fuel, initial_target_estimate=None):

@@ -1,6 +1,7 @@
 import math
 import random
 
+
 class Sensor:
     """
     Simple directional sensor model for agents.

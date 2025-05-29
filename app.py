@@ -1,11 +1,12 @@
-import solara
+import threading
+import time
+
 import matplotlib.pyplot as plt
 import numpy as np
-import time
-import threading
+import solara
 
-from model import NavalModel
 from agents import MissileAgent, TargetAgent
+from model import NavalModel
 from TargetReportingUnit import TargetReportingUnit
 
 step_count = solara.reactive(0)

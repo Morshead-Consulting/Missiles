@@ -1,9 +1,11 @@
-from mesa import Agent
 import math
 import random
 
-from sensor import Sensor
+from mesa import Agent
+
 from agents import MissileAgent, TargetAgent
+from sensor import Sensor
+
 
 class TargetReportingUnit(Agent):
     def __init__(self, model, pos, direction=None, speed=1, min_distance=150):
