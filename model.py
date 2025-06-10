@@ -1,19 +1,10 @@
-from enum import Enum
-
 from mesa.model import Model
 from mesa.space import MultiGrid
 
 from agents import MissileAgent, TargetAgent
 from TargetReportingUnit import TargetReportingUnit
-
-
-class SwarmMode(Enum):
-    SIMPLE = 1
-    OVERWHELM = 2
-    WAVE = 3
-    RECCE = 4
-    SPLIT_AXIS = 5
-    DECOY = 6
+from swarm_modes import SwarmMode # Import SwarmMode from the new file
+import math # Import math for distance calculation
 
 
 class NavalModel(Model):
@@ -49,39 +40,77 @@ class NavalModel(Model):
 
     def step(self):
         print(f"Step {self.steps} starting...")
-        # 1. Missile launching
+
+        # --- Communication Phase (Order matters for coordination) ---
+        # 1. Clear incoming messages for all missiles from previous step
+        for agent in self.agents:
+            if isinstance(agent, MissileAgent):
+                agent.incoming_messages = []
+
+        # 2. Perform broadcast communication (missiles share info with neighbors)
+        missile_agents = [agent for agent in self.agents if isinstance(agent, MissileAgent)]
+        for sender_missile in missile_agents:
+            if not sender_missile.alive:
+                continue
+
+            # Create the message to send
+            message_to_send = {
+                'sender_id': sender_missile.unique_id,
+                'sender_pos': sender_missile.pos,
+                'sender_target_estimate': sender_missile.estimated_target_pos,
+                'sender_speed': sender_missile.speed, # Include sender's current speed
+                'sender_fuel': sender_missile.fuel # Include sender's fuel
+            }
+
+            for receiver_missile in missile_agents:
+                if sender_missile.unique_id == receiver_missile.unique_id or not receiver_missile.alive:
+                    continue
+
+                distance = math.hypot(sender_missile.pos[0] - receiver_missile.pos[0],
+                                      sender_missile.pos[1] - receiver_missile.pos[1])
+
+                if distance <= sender_missile.comms_range:
+                    receiver_missile._receive_message(message_to_send)
+
+        # 3. Missile launching
         if self.steps - self.last_launch_step >= self.launch_interval and self.missile_count < self.num_missiles:
             self.launch_missile()
             self.last_launch_step = self.steps
-        # Access agents via model.agents (Mesa 3.0)
         print(f"Missiles now: {len([a for a in self.agents if isinstance(a, MissileAgent)])}")
 
-        # 2. TRUs update all missiles with new estimates
-        # Access agents via model.agents (Mesa 3.0)
+        # 4. TRUs update all missiles with new estimates
         tru_agents = [agent for agent in self.agents if isinstance(agent, TargetReportingUnit)]
-        missile_agents = [agent for agent in self.agents if isinstance(agent, MissileAgent)]
+        missile_agents_still_alive = [agent for agent in self.agents if isinstance(agent, MissileAgent) and agent.alive]
 
         for tru in tru_agents:
             if tru.latest_estimate is not None:
-                for missile in missile_agents:
+                for missile in missile_agents_still_alive:
                     missile.update_target_estimate(tru.latest_estimate)
 
-        # 3. Step all agents using model.agents.shuffle_do (Mesa 3.0)
-        self.agents.shuffle_do("step") # Use model.agents.shuffle_do for Mesa 3.0
-        print(f"Step {self.steps} completed.") # Model.steps increments automatically
+        # 5. Step all agents (Missiles will now process their newly received messages and adjust speed)
+        self.agents.shuffle_do("step")
+        print(f"Step {self.steps} completed.")
 
     def launch_missile(self):
         pos = self.launch_platform_pos
+        # Define default min/max speeds for newly launched missiles
+        DEFAULT_MIN_MISSILE_SPEED = 0.1
+        DEFAULT_MAX_MISSILE_SPEED = 2.0
+        
         missile = MissileAgent(
             model=self,
             pos=pos,
             direction=None,
-            speed=1,
+            speed=1, # Base speed of 1
             fuel=400,
             initial_target_estimate=[90, 15],
-            mode=self.swarm_mode
+            mode=self.swarm_mode,
+            comms_range=50,
+            min_speed=DEFAULT_MIN_MISSILE_SPEED, # Pass min_speed
+            max_speed=DEFAULT_MAX_MISSILE_SPEED  # Pass max_speed
         )
         self.grid.place_agent(missile, pos)
         self.agents.add(missile)
         print(f"Missile {missile.unique_id} launched at step {self.steps} with pos {missile.pos}")
         self.missile_count += 1
+

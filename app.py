@@ -13,7 +13,7 @@ from TargetReportingUnit import TargetReportingUnit
 # --- Configuration ---
 WIDTH = 250
 HEIGHT = 60
-NUM_MISSILES = 5
+NUM_MISSILES = 15
 LAUNCH_INTERVAL = 10
 
 # --- Solara Reactive States ---
