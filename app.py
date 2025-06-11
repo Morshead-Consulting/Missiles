@@ -25,7 +25,7 @@ model = solara.reactive(
         height=HEIGHT,
         num_missiles=NUM_MISSILES,
         launch_interval=LAUNCH_INTERVAL,
-        swarm_mode=SwarmMode.RECCE # Set to RECCE mode to observe scout/attacker behavior
+        swarm_mode=SwarmMode.DECOY
     )
 )
 running = solara.reactive(False)

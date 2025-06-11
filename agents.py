@@ -427,14 +427,139 @@ class MissileAgent(Agent):
             self.direction = self._get_direction_vector(self.estimated_target_pos)       
 
     def _split_axis_approach(self):
-        """Placeholder for SPLIT_AXIS approach logic."""
-        print(f"[Missile {self.unique_id}] Running SPLIT_AXIS approach (placeholder).")
-        self._simple_guidance()
+        """
+        Split-Axis: Missiles approach from different compass directions,
+        then switch to direct attack when close to the target.
+        """
+        print(f"[Missile {self.unique_id}] SPLIT_AXIS: Starting maneuver.")
+
+        # Assign a fixed approach direction based on unique ID
+        approach_direction = self.unique_id % 4
+        direction_names = ['EAST', 'WEST', 'NORTH', 'SOUTH']
+        print(f"  [Missile {self.unique_id}] Approach Direction: {direction_names[approach_direction]}")
+
+        # Get current target position estimate
+        target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
+        self._fuse_target_estimates_with_messages()
+
+        if self.estimated_target_pos is None:
+            self.estimated_target_pos = [self.float_pos[0] + 1, self.float_pos[1]]
+
+        # Distance to target
+        dx = target.pos[0] - self.float_pos[0]
+        dy = target.pos[1] - self.float_pos[1]
+        dist_to_target = math.hypot(dx, dy)
+        TERMINAL_DISTANCE = 40
+
+        # === Terminal Attack Phase ===
+        if dist_to_target < TERMINAL_DISTANCE:
+            print(f"  [Missile {self.unique_id}] SPLIT_AXIS: Switching to SIMPLE guidance (terminal attack).")
+            self._simple_guidance()
+            self.speed = self.base_speed
+            return
+
+        # === Approach Phase ===
+        offset_distance = 50
+        if approach_direction == 0:   # EAST
+            aim_point = [target.pos[0] + offset_distance, target.pos[1]]
+        elif approach_direction == 1: # WEST
+            aim_point = [target.pos[0] - offset_distance, target.pos[1]]
+        elif approach_direction == 2: # NORTH
+            aim_point = [target.pos[0], target.pos[1] - offset_distance]
+        else:                         # SOUTH
+            aim_point = [target.pos[0], target.pos[1] + offset_distance]
+
+        self.direction = self._get_direction_vector(aim_point)
+
+        # === Speed Coordination ===
+        distances = [dist_to_target]
+        for msg in self.incoming_messages:
+            sender_pos = msg.get("sender_pos")
+            if sender_pos:
+                dx2 = target.pos[0] - sender_pos[0]
+                dy2 = target.pos[1] - sender_pos[1]
+                distances.append(math.hypot(dx2, dy2))
+
+        avg_dist = sum(distances) / len(distances)
+        buffer = 5
+
+        if dist_to_target <= 10:
+            self.speed = self.base_speed
+            print(f"  [Missile {self.unique_id}] Final push to target.")
+        elif dist_to_target < avg_dist - buffer:
+            self.speed = self.base_speed * 0.2
+            print(f"  [Missile {self.unique_id}] Loitering.")
+        else:
+            self.speed = self.base_speed
+
+        self.incoming_messages.clear()
+
+    def _fuse_target_estimates_with_messages(self):
+        estimates = [self.estimated_target_pos] if self.estimated_target_pos else []
+        for msg in self.incoming_messages:
+            est = msg.get('sender_target_estimate')
+            if est:
+                estimates.append(est)
+        if estimates:
+            avg_x = sum(e[0] for e in estimates) / len(estimates)
+            avg_y = sum(e[1] for e in estimates) / len(estimates)
+            self.estimated_target_pos = [avg_x, avg_y]
 
     def _decoy_behaviour(self):
-        """Placeholder for DECOY behaviour logic."""
-        print(f"[Missile {self.unique_id}] Running DECOY behaviour (placeholder).")
-        self._simple_guidance()
+        """
+        DECOY behavior: Simulate attack profiles until a late phase, then diverge or self-destruct.
+        Meant to cause defensive misallocation.
+        """
+        print(f"[Missile {self.unique_id}] DECOY: Starting behavior.")
+
+        # Decoys also need a target estimate to simulate an attack run
+        # They primarily rely on their own estimated_target_pos (updated by TRU)
+        # They DO NOT use scout estimates to avoid real-time refinement that might pull them to actual target.
+        # So, no complex fusion logic here, just use self.estimated_target_pos.
+        
+        target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
+        
+        # Calculate distance to the actual target (to decide when to divert)
+        dx_to_true_target = target.pos[0] - self.float_pos[0]
+        dy_to_true_target = target.pos[1] - self.float_pos[1]
+        dist_to_true_target = math.hypot(dx_to_true_target, dy_to_true_target)
+
+        # Constants for decoy behavior
+        DECOY_DIVERGE_DISTANCE = 80 # Distance from target at which decoys start to diverge
+        DECOY_SELF_DESTRUCT_DISTANCE = 10 # Distance at which decoy self-destructs if it somehow gets too close
+
+        if dist_to_true_target <= DECOY_SELF_DESTRUCT_DISTANCE:
+            # If a decoy somehow gets critically close, self-destruct to ensure it doesn't hit
+            self.exploded = True
+            self.alive = False
+            self.model.agents.remove(self)
+            self.model.grid.remove_agent(self)
+            print(f"  [Missile {self.unique_id}] DECOY: Too close to target ({dist_to_true_target:.2f} units). Self-destructed!")
+            return
+
+        elif dist_to_true_target <= DECOY_DIVERGE_DISTANCE:
+            # Late phase: Diverge from target (e.g., dive early)
+            print(f"  [Missile {self.unique_id}] DECOY: Diverging at {dist_to_true_target:.2f} units.")
+            self.speed = self.base_speed # Maintain speed during dive
+
+            # Calculate a new "divert" target that's significantly below or above the current target position
+            # This makes them fly past or dive into the sea
+            divert_x = self.estimated_target_pos[0]
+            divert_y = self.estimated_target_pos[1] + random.uniform(50, 100) * random.choice([-1, 1]) # Divert vertically
+
+            # Make them also turn slightly away horizontally
+            divert_x += random.uniform(20, 50) * random.choice([-1, 1])
+
+            self.direction = self._get_direction_vector([divert_x, divert_y])
+            print(f"  [Missile {self.unique_id}] DECOY: New divert direction towards {divert_x:.2f},{divert_y:.2f}.")
+
+        else:
+            # Early phase: Act like a real missile, advance towards the estimated target
+            print(f"  [Missile {self.unique_id}] DECOY: Simulating attack profile.")
+            self.speed = self.base_speed # Advance at base speed
+            self.direction = self._get_direction_vector(self.estimated_target_pos)
+
+        self.incoming_messages.clear() # Decoys don't typically process complex messages for their own guidance
 
 
 class TargetAgent(Agent):
