@@ -302,7 +302,7 @@ class MissileAgent(Agent):
 
         if own_dist_to_target <= staggered_final_assault_distance:
             self.speed = self.base_speed
-            print(f"  [Missile {self.unique_id}] Wave {self.wave_id}: Final Assault! Full speed. Target dist: {own_dist_to_target:.2f}")
+            print(f"  [Missile {self.unique_id}] Wave {self.wave_id}: Final Assault! Full speed.")
         elif own_dist_to_target < staggered_loiter_buffer_target_dist:
             self.speed = self.base_speed * 0.2
             print(f"  [Missile {self.unique_id}] Wave {self.wave_id}: Loitering. Calculated speed: {self.speed:.2f}")
@@ -321,13 +321,46 @@ class MissileAgent(Agent):
         """
         print(f"[Missile {self.unique_id}] RECCE | Type: {self.missile_type.name} | State: {self.recce_state.name} | Messages: {len(self.incoming_messages)}")
 
-        scout_estimates = self._collect_scout_estimates()
-        self._update_estimate_from_scouts(scout_estimates)
+        # TRU updates self.estimated_target_pos *before* this method runs in model.step.
+        # So, self.estimated_target_pos at this point contains the latest TRU data.
 
+        fresh_scout_estimates_from_comms = []
+        # Collect NEW estimates from incoming scout messages only
+        for message in self.incoming_messages:
+            sender_type_val = message.get('sender_type')
+            sender_type = MissileType(sender_type_val) if sender_type_val is not None else None
+            if sender_type == MissileType.SCOUT:
+                est = message.get('sender_target_estimate')
+                if est:
+                    fresh_scout_estimates_from_comms.append(est)
+        
+        # Priority for setting THIS STEP's estimated_target_pos:
+        # 1. Fresh Scout Data (from comms this step)
+        # 2. Missile's own TRU-fed estimate (from model.step) - this is the fallback.
+        # 3. Simple Forward Guess (if absolutely no estimate exists from TRU either).
+        
+        if fresh_scout_estimates_from_comms:
+            # If fresh scout estimates are available this step, fuse and use them.
+            fused_x = sum(e[0] for e in fresh_scout_estimates_from_comms) / len(fresh_scout_estimates_from_comms)
+            fused_y = sum(e[1] for e in fresh_scout_estimates_from_comms) / len(fresh_scout_estimates_from_comms)
+            self.estimated_target_pos = [fused_x, fused_y]
+            print(f"  [Missile {self.unique_id}] Recce: Target estimate updated from FRESH scouts.")
+        elif self.estimated_target_pos is None:
+            # If no fresh scouts AND missile currently has no estimate (e.g., very early in sim or TRU fails)
+            self.estimated_target_pos = [self.float_pos[0] + 1, self.float_pos[1]]
+            print(f"  [Missile {self.unique_id}] Recce: No estimates available. Guessing forward.")
+        else:
+            # Otherwise, retain the missile's current self.estimated_target_pos (from TRU or previous scout fusion).
+            # This handles the case where TRU is providing the best, but not necessarily "fresh scout" data.
+            print(f"  [Missile {self.unique_id}] Recce: Retaining current TRU/previous scout estimate.")
+
+
+        # --- Role-Specific Behavior ---
+        
         if self.missile_type == MissileType.SCOUT:
             self._recce_scout_behavior()
         elif self.missile_type == MissileType.ATTACKER:
-            self._recce_attacker_behavior(scout_estimates)
+            self._recce_attacker_behavior(fresh_scout_estimates_from_comms) # Pass for state transition check
 
         self.incoming_messages.clear()
 
@@ -343,38 +376,6 @@ class MissileAgent(Agent):
                 if est:
                     estimates.append(est)
         return estimates
-
-    def _update_estimate_from_scouts(self, estimates, max_fusion_distance=30):
-        """Fuse scout estimates with current one, ignoring distant outliers."""
-        if not estimates:
-            if self.estimated_target_pos is None:
-                self.estimated_target_pos = [self.float_pos[0] + 1, self.float_pos[1]]
-                print(f"  [Missile {self.unique_id}] Recce: No estimates, guessing forward.")
-            else:
-                print(f"  [Missile {self.unique_id}] Recce: Retaining previous estimate.")
-            return
-
-        # Filter scout estimates close to the current estimate
-        if self.estimated_target_pos:
-            filtered = []
-            for e in estimates:
-                dx = e[0] - self.estimated_target_pos[0]
-                dy = e[1] - self.estimated_target_pos[1]
-                dist = math.hypot(dx, dy)
-                if dist < max_fusion_distance:
-                    filtered.append(e)
-        else:
-            filtered = estimates
-
-        if not filtered:
-            print(f"  [Missile {self.unique_id}] Recce: Ignoring inconsistent scout estimates.")
-            return
-
-        avg_x = sum(e[0] for e in filtered) / len(filtered)
-        avg_y = sum(e[1] for e in filtered) / len(filtered)
-        self.estimated_target_pos = [avg_x, avg_y]
-        print(f"  [Missile {self.unique_id}] Recce: Updated estimate from {len(filtered)} scouts.")
-
 
     def _recce_scout_behavior(self):
         """Scout behavior: move fast with lateral dispersion."""
@@ -393,37 +394,38 @@ class MissileAgent(Agent):
 
         self.direction = (new_dir_x / mag, new_dir_y / mag) if mag else (1, 0)
 
-    def _recce_attacker_behavior(self, scout_estimates):
+    def _recce_attacker_behavior(self, fresh_scout_estimates_from_comms):
         """Attacker behavior: loiter until confirmed, then engage and continue refining estimate."""
         print(f"  [Missile {self.unique_id}] Recce: ATTACKER | State: {self.recce_state.name}")
 
         if self.recce_state == RecceState.INITIAL_LOITER:
             self.speed = self.min_speed
-
-            if scout_estimates:
+            
+            # Transition to CONFIRMED_ATTACK if *any* fresh scout estimate was received this step
+            if fresh_scout_estimates_from_comms:
                 self.recce_state = RecceState.CONFIRMED_ATTACK
-                self.speed = self.base_speed
-                print(f"  [Missile {self.unique_id}] Recce: Transitioned to CONFIRMED_ATTACK!")
+                self.speed = self.base_speed # Accelerate to base speed for attack
+                print(f"  [Missile {self.unique_id}] Recce: ATTACKER transitioned to CONFIRMED_ATTACK!")
 
             self.direction = self._get_direction_vector(self.estimated_target_pos)
 
         elif self.recce_state == RecceState.CONFIRMED_ATTACK:
             self.speed = self.base_speed
-
-            # Check sensor for target
+            
+            # In CONFIRMED_ATTACK, the missile's own sensor is the highest priority for terminal guidance.
             target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
             detected, rel_pos = self.sensor.run_detection(self.float_pos, self.direction, target.pos)
 
             if detected and rel_pos:
-                # Use missile's own sensor for terminal guidance
+                # Use missile's own sensor for direct terminal guidance
                 sensed_x = self.float_pos[0] + rel_pos[0]
                 sensed_y = self.float_pos[1] + rel_pos[1]
-                self.estimated_target_pos = [sensed_x, sensed_y]
-                print(f"  [Missile {self.unique_id}] Recce: Using sensor estimate for terminal phase.")
+                self.estimated_target_pos = [sensed_x, sensed_y] # OVERRIDE with direct sensor data
+                print(f"  [Missile {self.unique_id}] Recce: Using OWN SENSOR estimate for terminal phase.")
             else:
-                # Otherwise, continue refining based on scout estimates
-                self._update_estimate_from_scouts(scout_estimates, max_fusion_distance=50)
-
+                # If own sensor doesn't detect, rely on self.estimated_target_pos (updated by TRU/scouts in _recce_logic)
+                print(f"  [Missile {self.unique_id}] Recce: No local sensor. Relying on latest fused estimate.")
+            
             self.direction = self._get_direction_vector(self.estimated_target_pos)       
 
     def _split_axis_approach(self):
@@ -438,63 +440,86 @@ class MissileAgent(Agent):
         direction_names = ['EAST', 'WEST', 'NORTH', 'SOUTH']
         print(f"  [Missile {self.unique_id}] Approach Direction: {direction_names[approach_direction]}")
 
-        # Get current target position estimate
+        # Get current target position estimate (using a simplified fusion for this mode)
+        # Note: This mode's fusion logic is simpler than Recce mode's.
+        current_target_estimate = list(self.estimated_target_pos) if self.estimated_target_pos else None
+        all_estimates = []
+        if current_target_estimate:
+            all_estimates.append(current_target_estimate)
+        for msg in self.incoming_messages:
+            est = msg.get('sender_target_estimate')
+            if est:
+                all_estimates.append(est)
+        if all_estimates:
+            fused_x = sum(e[0] for e in all_estimates) / len(all_estimates)
+            fused_y = sum(e[1] for e in all_estimates) / len(all_estimates)
+            self.estimated_target_pos = [fused_x, fused_y]
+        else:
+            self.estimated_target_pos = [self.float_pos[0] + 1, self.float_pos[1]] # Fallback if no estimates
+
+
         target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
-        self._fuse_target_estimates_with_messages()
-
-        if self.estimated_target_pos is None:
-            self.estimated_target_pos = [self.float_pos[0] + 1, self.float_pos[1]]
-
-        # Distance to target
-        dx = target.pos[0] - self.float_pos[0]
-        dy = target.pos[1] - self.float_pos[1]
-        dist_to_target = math.hypot(dx, dy)
+        
+        # Distance to target (true target for decision, estimated for guidance until terminal phase)
+        dx_to_true_target = target.pos[0] - self.float_pos[0]
+        dy_to_true_target = target.pos[1] - self.float_pos[1]
+        dist_to_true_target = math.hypot(dx_to_true_target, dy_to_true_target)
         TERMINAL_DISTANCE = 40
 
         # === Terminal Attack Phase ===
-        if dist_to_target < TERMINAL_DISTANCE:
-            print(f"  [Missile {self.unique_id}] SPLIT_AXIS: Switching to SIMPLE guidance (terminal attack).")
-            self._simple_guidance()
+        if dist_to_true_target < TERMINAL_DISTANCE:
+            print(f"  [Missile {self.unique_id}] SPLIT_AXIS: Switching to direct attack (terminal phase).")
+            # In terminal phase, prioritize direct targeting to actual target
+            self.direction = self._get_direction_vector(target.pos) # Direct to true target for final attack
             self.speed = self.base_speed
             return
 
         # === Approach Phase ===
         offset_distance = 50
-        if approach_direction == 0:   # EAST
+        if approach_direction == 0:   # EAST (from right side)
             aim_point = [target.pos[0] + offset_distance, target.pos[1]]
-        elif approach_direction == 1: # WEST
+        elif approach_direction == 1: # WEST (from left side)
             aim_point = [target.pos[0] - offset_distance, target.pos[1]]
-        elif approach_direction == 2: # NORTH
+        elif approach_direction == 2: # NORTH (from top side)
             aim_point = [target.pos[0], target.pos[1] - offset_distance]
-        else:                         # SOUTH
+        else:                         # SOUTH (from bottom side)
             aim_point = [target.pos[0], target.pos[1] + offset_distance]
 
         self.direction = self._get_direction_vector(aim_point)
 
-        # === Speed Coordination ===
-        distances = [dist_to_target]
+        # === Speed Coordination (similar to Overwhelm/Wave for group cohesion) ===
+        # Use relative distance to target for speed adjustments
+        distances_to_target = [dist_to_true_target] # Start with own true distance
         for msg in self.incoming_messages:
             sender_pos = msg.get("sender_pos")
             if sender_pos:
+                # Calculate sender's distance to target (true target for this coordination)
                 dx2 = target.pos[0] - sender_pos[0]
                 dy2 = target.pos[1] - sender_pos[1]
-                distances.append(math.hypot(dx2, dy2))
+                distances_to_target.append(math.hypot(dx2, dy2))
 
-        avg_dist = sum(distances) / len(distances)
-        buffer = 5
+        avg_dist_swarm = sum(distances_to_target) / len(distances_to_target)
+        cohesion_buffer = 10 # How much buffer around the average to allow
 
-        if dist_to_target <= 10:
-            self.speed = self.base_speed
-            print(f"  [Missile {self.unique_id}] Final push to target.")
-        elif dist_to_target < avg_dist - buffer:
-            self.speed = self.base_speed * 0.2
-            print(f"  [Missile {self.unique_id}] Loitering.")
+        if dist_to_true_target < avg_dist_swarm - cohesion_buffer:
+            self.speed = self.min_speed # Slow down if too far ahead of average
+            print(f"  [Missile {self.unique_id}] SPLIT_AXIS: Loitering (ahead of group). Speed: {self.speed:.2f}")
+        elif dist_to_true_target > avg_dist_swarm + cohesion_buffer:
+            self.speed = self.max_speed # Speed up if too far behind
+            print(f"  [Missile {self.unique_id}] SPLIT_AXIS: Accelerating (behind group). Speed: {self.speed:.2f}")
         else:
-            self.speed = self.base_speed
+            self.speed = self.base_speed # Maintain base speed
+            print(f"  [Missile {self.unique_id}] SPLIT_AXIS: Maintaining position. Speed: {self.speed:.2f}")
 
         self.incoming_messages.clear()
 
+
     def _fuse_target_estimates_with_messages(self):
+        """
+        Helper for other modes (not Recce), fuses own estimate with incoming messages.
+        (Note: For Recce, _recce_logic handles fusion and has different priority).
+        This helper is primarily for modes like OVERWHELM and WAVE.
+        """
         estimates = [self.estimated_target_pos] if self.estimated_target_pos else []
         for msg in self.incoming_messages:
             est = msg.get('sender_target_estimate')
@@ -512,10 +537,8 @@ class MissileAgent(Agent):
         """
         print(f"[Missile {self.unique_id}] DECOY: Starting behavior.")
 
-        # Decoys also need a target estimate to simulate an attack run
-        # They primarily rely on their own estimated_target_pos (updated by TRU)
+        # Decoys primarily rely on their own estimated_target_pos (updated by TRU)
         # They DO NOT use scout estimates to avoid real-time refinement that might pull them to actual target.
-        # So, no complex fusion logic here, just use self.estimated_target_pos.
         
         target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
         
@@ -559,7 +582,7 @@ class MissileAgent(Agent):
             self.speed = self.base_speed # Advance at base speed
             self.direction = self._get_direction_vector(self.estimated_target_pos)
 
-        self.incoming_messages.clear() # Decoys don't typically process complex messages for their own guidance
+        self.incoming_messages.clear()
 
 
 class TargetAgent(Agent):
