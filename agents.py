@@ -4,27 +4,35 @@ import random
 from mesa import Agent
 
 from sensor import Sensor
-from swarm_modes import SwarmMode
+from swarm_modes import SwarmMode, MissileType, RecceState
 
 
 class MissileAgent(Agent):
     def __init__(self, model, pos, direction, speed, fuel, initial_target_estimate=None, mode=None, comms_range=50,
-                 min_speed=0.1, max_speed=2.0): # Added min_speed and max_speed
+                 min_speed=0.1, max_speed=2.0, wave_id=0, missile_type=MissileType.ATTACKER,
+                 sensor_range=30, sensor_field_of_view_deg=90, sensor_noise_std=0.5):
         super().__init__(model)
 
-        self.base_speed = speed      # Store the original speed from launch
-        self.speed = speed           # Current effective speed, can be adjusted
-        self.min_speed = min_speed   # Minimum allowable speed
-        self.max_speed = max_speed   # Maximum allowable speed
+        self.base_speed = speed
+        self.speed = speed
+        self.min_speed = min_speed
+        self.max_speed = max_speed
         self.fuel = fuel
         self.exploded = False
         self.alive = True
         self.trail = [pos]
-        self.sensor = Sensor(range=30, field_of_view_deg=90, noise_std=0.5)
+        self.sensor = Sensor(range=sensor_range, field_of_view_deg=sensor_field_of_view_deg, noise_std=sensor_noise_std)
         self.pos = pos
         self.float_pos = list(pos)
         self.direction = direction if direction is not None else (1, 0)
         self.mode = mode
+        self.wave_id = wave_id
+        self.comms_range = comms_range
+        self.incoming_messages = []
+
+        self.missile_type = missile_type
+        self.recce_state = RecceState.INITIAL_LOITER
+
 
         if initial_target_estimate is not None:
             self.estimated_target_pos = list(initial_target_estimate)
@@ -32,8 +40,6 @@ class MissileAgent(Agent):
             self.estimated_target_pos = None
 
         self.sensor_switch_distance = 20.0
-        self.comms_range = comms_range
-        self.incoming_messages = []
 
     def update_target_estimate(self, new_estimate):
         """Updates the missile's internal estimate of the target's position."""
@@ -43,21 +49,50 @@ class MissileAgent(Agent):
         """Adds an incoming message to the missile's buffer."""
         self.incoming_messages.append(message)
 
+    def _get_direction_vector(self, target_coord):
+        """
+        Calculates a normalized direction vector from the missile's current position
+        towards a target coordinate. Ensures the vector is never (0,0) to prevent stalling.
+        """
+        if target_coord is None:
+            return (1, 0) # Default to forward if no target specified
+
+        dx = target_coord[0] - self.float_pos[0]
+        dy = target_coord[1] - self.float_pos[1]
+        
+        distance = math.hypot(dx, dy)
+
+        # If the distance is extremely small, add a slight random perturbation
+        if distance < 1e-6: # Using a very small epsilon (e.g., 0.000001)
+            # Generate a small random perturbation around the current direction
+            perturb_x = random.uniform(-0.1, 0.1)
+            perturb_y = random.uniform(-0.1, 0.1)
+            
+            new_dir_x = self.direction[0] + perturb_x
+            new_dir_y = self.direction[1] + perturb_y
+            
+            new_mag = math.hypot(new_dir_x, new_dir_y)
+            if new_mag > 0:
+                return (new_dir_x / new_mag, new_dir_y / new_mag)
+            else:
+                return (1, 0) # Fallback if perturbation results in zero vector
+
+        return (dx / distance, dy / distance)
+
     def step(self):
         """
         Advances the missile's state by one step.
         Dispatches to different guidance logics based on the swarm mode.
         Handles common aspects like fuel consumption, movement, and hit detection.
         """
-        print(f"[Step {self.model.steps}] Missile {self.unique_id} - Starting step. Pos: {self.pos}, Fuel: {self.fuel}, Alive: {self.alive}, Mode: {self.mode}")
+        print(f"[Step {self.model.steps}] Missile {self.unique_id} - Starting step. Pos: {self.pos}, Fuel: {self.fuel}, Alive: {self.alive}, Mode: {self.mode}, Type: {self.missile_type.name}")
 
         if not self.alive:
             print(f"[Missile {self.unique_id}] Inactive. Skipping step.")
             return
 
-        # Reset speed to base at the start of each step, then adjust if needed by guidance.
-        # Speed will be clamped to min/max *after* guidance logic.
         self.speed = self.base_speed
+
 
         # --- Swarm Mode Specific Guidance Logic ---
         if self.mode == SwarmMode.SIMPLE:
@@ -78,7 +113,6 @@ class MissileAgent(Agent):
 
         # --- Apply Speed Constraints ---
         self.speed = max(self.min_speed, min(self.speed, self.max_speed))
-        print(f"  [Missile {self.unique_id}] Clamped speed to {self.speed:.2f} (min={self.min_speed}, max={self.max_speed})")
 
 
         # --- Common Post-Guidance Logic (Fuel, Movement, Hit Detection) ---
@@ -97,7 +131,6 @@ class MissileAgent(Agent):
             print(f"[Missile {self.unique_id}] Ran out of fuel and is now inactive.")
             return
 
-        # Move missile based on the direction determined by the guidance mode and current effective speed
         self.float_pos[0] += self.direction[0] * self.speed
         self.float_pos[1] += self.direction[1] * self.speed
 
@@ -117,7 +150,6 @@ class MissileAgent(Agent):
 
         print(f"[Missile {self.unique_id}] Moved to {new_pos} | Direction: {self.direction} | Fuel left: {self.fuel} | Current Speed: {self.speed}")
 
-        # Check for hit after moving to the new position
         cellmates = self.model.grid.get_cell_list_contents([new_pos])
         for other in cellmates:
             if isinstance(other, TargetAgent):
@@ -136,28 +168,8 @@ class MissileAgent(Agent):
         Guidance logic for the SIMPLE swarm mode.
         Each missile independently navigates to the target using the last known target location.
         Missiles do not coordinate or communicate.
-        (They do not process incoming_messages in this mode)
         """
-        target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
-        dx = target.pos[0] - self.pos[0]
-        dy = target.pos[1] - self.pos[1]
-        dist_to_target = math.hypot(dx, dy)
-
-        if dist_to_target <= self.sensor_switch_distance:
-            detected, noisy_rel = self.sensor.run_detection(self.pos, self.direction, target.pos)
-            if detected:
-                dx_sensor, dy_sensor = noisy_rel
-                self.estimated_target_pos = [self.pos[0] + dx_sensor, self.pos[1] + dy_sensor]
-            else:
-                pass # Use TRU estimate if sensor fails or is out of range
-
-        if self.estimated_target_pos:
-            dx_est = self.estimated_target_pos[0] - self.float_pos[0]
-            dy_est = self.estimated_target_pos[1] - self.float_pos[1]
-            mag_est = math.hypot(dx_est, dy_est)
-            self.direction = (dx_est / mag_est, dy_est / mag_est) if mag_est != 0 else (0, 0)
-        else:
-            self.direction = (1, 0) # Default to forward if no estimate
+        self.direction = self._get_direction_vector(self.estimated_target_pos)
 
 
     def _overwhelm_guidance(self):
@@ -186,11 +198,10 @@ class MissileAgent(Agent):
             fused_y = sum(e[1] for e in all_target_estimates) / len(all_target_estimates)
             self.estimated_target_pos = [fused_x, fused_y]
         else:
-            self.estimated_target_pos = target.pos # Default to true target pos for robustness
+            self.estimated_target_pos = [self.pos[0] + 1, self.pos[1]] # Fallback forward guess
 
 
         # 2. Synchronize Movement (Adjust speed based on swarm's average distance to target)
-        # Collect distances to target for all communicating missiles (including self)
         all_missile_distances_to_target = []
         
         own_dx_to_target = target.pos[0] - self.float_pos[0]
@@ -207,57 +218,223 @@ class MissileAgent(Agent):
                 all_missile_distances_to_target.append(sender_dist_to_target)
 
         average_swarm_dist_to_target = own_dist_to_target
-        if all_missile_distances_to_target: # Ensure there are distances to average
+        if all_missile_distances_to_target:
             average_swarm_dist_to_target = sum(all_missile_distances_to_target) / len(all_missile_distances_to_target)
 
-        # Define thresholds for behavior
-        # SYNCHRONIZATION_THRESHOLD = 50 # Not explicitly used for action, but context for loiter buffer
-        LOITER_BUFFER = 5           # How much closer can a missile be before slowing down
-        FINAL_ASSAULT_DISTANCE = 10 # Distance for final full-speed rush
+        LOITER_BUFFER = 5
+        FINAL_ASSAULT_DISTANCE = 10
 
         if own_dist_to_target <= FINAL_ASSAULT_DISTANCE:
-            self.speed = self.base_speed # Final assault: full speed ahead
+            self.speed = self.base_speed
             print(f"  [Missile {self.unique_id}] Overwhelm: Final Assault! Full speed.")
         elif own_dist_to_target < average_swarm_dist_to_target - LOITER_BUFFER:
-            # If too far ahead of the average, slow down (loiter)
-            # This speed will be clamped by min_speed
             self.speed = self.base_speed * 0.2
             print(f"  [Missile {self.unique_id}] Overwhelm: Loitering. Calculated speed: {self.speed:.2f}")
         else:
-            self.speed = self.base_speed # Otherwise, maintain base speed
+            self.speed = self.base_speed
 
-        # 3. Adjust Direction (Always towards the fused estimated target position)
-        if self.estimated_target_pos:
-            dx_est = self.estimated_target_pos[0] - self.float_pos[0]
-            dy_est = self.estimated_target_pos[1] - self.float_pos[1]
-            mag_est = math.hypot(dx_est, dy_est)
-            self.direction = (dx_est / mag_est, dy_est / mag_est) if mag_est != 0 else (0, 0)
-        else:
-            self.direction = (1, 0) # Fallback direction (shouldn't happen with robust fusion)
+        self.direction = self._get_direction_vector(self.estimated_target_pos)
 
-        # Crucial: Clear messages after processing for the current step
         self.incoming_messages = []
 
 
     def _wave_attack(self):
-        """Placeholder for WAVE attack logic."""
-        print(f"[Missile {self.unique_id}] Running WAVE attack (placeholder).")
-        self._simple_guidance() # Fallback
+        """
+        Guidance logic for the WAVE swarm mode ("Pulse Attack").
+        Missiles self-organize into temporal waves to apply sustained pressure.
+        """
+        print(f"[Missile {self.unique_id}] Running WAVE attack for Wave ID: {self.wave_id}. Received {len(self.incoming_messages)} messages.")
+
+        target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
+        
+        # 1. Fuse Target Estimates (same as Overwhelm)
+        current_target_estimate = list(self.estimated_target_pos) if self.estimated_target_pos else None
+        all_target_estimates = []
+
+        if current_target_estimate:
+            all_target_estimates.append(current_target_estimate)
+
+        for message in self.incoming_messages:
+            sender_target_estimate = message.get('sender_target_estimate')
+            if sender_target_estimate:
+                all_target_estimates.append(sender_target_estimate)
+
+        if all_target_estimates:
+            fused_x = sum(e[0] for e in all_target_estimates) / len(all_target_estimates)
+            fused_y = sum(e[1] for e in all_target_estimates) / len(all_target_estimates)
+            self.estimated_target_pos = [fused_x, fused_y]
+        else:
+            self.estimated_target_pos = [self.pos[0] + 1, self.pos[1]] # Fallback forward guess
+
+
+        # 2. Wave Synchronization (Adjust speed based on wave's average distance and staggering)
+        relevant_messages = [
+            msg for msg in self.incoming_messages
+            if msg.get('sender_wave_id') == self.wave_id
+        ]
+
+        all_missile_distances_in_wave = []
+        
+        own_dx_to_target = target.pos[0] - self.float_pos[0]
+        own_dy_to_target = target.pos[1] - self.float_pos[1]
+        own_dist_to_target = math.hypot(own_dx_to_target, own_dy_to_target)
+        all_missile_distances_in_wave.append(own_dist_to_target)
+
+        for message in relevant_messages:
+            sender_pos = message.get('sender_pos')
+            if sender_pos:
+                sender_dx_to_target = target.pos[0] - sender_pos[0]
+                sender_dy_to_target = target.pos[1] - sender_pos[1]
+                sender_dist_to_target = math.hypot(sender_dx_to_target, sender_dy_to_target)
+                all_missile_distances_in_wave.append(sender_dist_to_target)
+
+        average_wave_dist_to_target = own_dist_to_target
+        if all_missile_distances_in_wave:
+            average_wave_dist_to_target = sum(all_missile_distances_in_wave) / len(all_missile_distances_in_wave)
+
+        BASE_LOITER_BUFFER = 5
+        BASE_FINAL_ASSAULT_DISTANCE = 10
+        WAVE_STAGGER_INCREMENT = 15
+
+        staggered_final_assault_distance = BASE_FINAL_ASSAULT_DISTANCE + (self.wave_id * WAVE_STAGGER_INCREMENT)
+        staggered_loiter_buffer_target_dist = average_wave_dist_to_target - BASE_LOITER_BUFFER
+
+
+        if own_dist_to_target <= staggered_final_assault_distance:
+            self.speed = self.base_speed
+            print(f"  [Missile {self.unique_id}] Wave {self.wave_id}: Final Assault! Full speed. Target dist: {own_dist_to_target:.2f}")
+        elif own_dist_to_target < staggered_loiter_buffer_target_dist:
+            self.speed = self.base_speed * 0.2
+            print(f"  [Missile {self.unique_id}] Wave {self.wave_id}: Loitering. Calculated speed: {self.speed:.2f}")
+        else:
+            self.speed = self.base_speed
+
+        self.direction = self._get_direction_vector(self.estimated_target_pos)
+
+        self.incoming_messages = []
+
+
 
     def _recce_logic(self):
-        """Placeholder for RECCE logic."""
-        print(f"[Missile {self.unique_id}] Running RECCE logic (placeholder).")
-        self._simple_guidance() # Fallback
+        """
+        RECCE mode: scouts explore and relay estimates; attackers act only on confirmed estimates.
+        """
+        print(f"[Missile {self.unique_id}] RECCE | Type: {self.missile_type.name} | State: {self.recce_state.name} | Messages: {len(self.incoming_messages)}")
+
+        scout_estimates = self._collect_scout_estimates()
+        self._update_estimate_from_scouts(scout_estimates)
+
+        if self.missile_type == MissileType.SCOUT:
+            self._recce_scout_behavior()
+        elif self.missile_type == MissileType.ATTACKER:
+            self._recce_attacker_behavior(scout_estimates)
+
+        self.incoming_messages.clear()
+
+
+    def _collect_scout_estimates(self):
+        """Extract fresh estimates from incoming scout messages."""
+        estimates = []
+        for msg in self.incoming_messages:
+            sender_type_val = msg.get('sender_type')
+            sender_type = MissileType(sender_type_val) if sender_type_val is not None else None
+            if sender_type == MissileType.SCOUT:
+                est = msg.get('sender_target_estimate')
+                if est:
+                    estimates.append(est)
+        return estimates
+
+    def _update_estimate_from_scouts(self, estimates, max_fusion_distance=30):
+        """Fuse scout estimates with current one, ignoring distant outliers."""
+        if not estimates:
+            if self.estimated_target_pos is None:
+                self.estimated_target_pos = [self.float_pos[0] + 1, self.float_pos[1]]
+                print(f"  [Missile {self.unique_id}] Recce: No estimates, guessing forward.")
+            else:
+                print(f"  [Missile {self.unique_id}] Recce: Retaining previous estimate.")
+            return
+
+        # Filter scout estimates close to the current estimate
+        if self.estimated_target_pos:
+            filtered = []
+            for e in estimates:
+                dx = e[0] - self.estimated_target_pos[0]
+                dy = e[1] - self.estimated_target_pos[1]
+                dist = math.hypot(dx, dy)
+                if dist < max_fusion_distance:
+                    filtered.append(e)
+        else:
+            filtered = estimates
+
+        if not filtered:
+            print(f"  [Missile {self.unique_id}] Recce: Ignoring inconsistent scout estimates.")
+            return
+
+        avg_x = sum(e[0] for e in filtered) / len(filtered)
+        avg_y = sum(e[1] for e in filtered) / len(filtered)
+        self.estimated_target_pos = [avg_x, avg_y]
+        print(f"  [Missile {self.unique_id}] Recce: Updated estimate from {len(filtered)} scouts.")
+
+
+    def _recce_scout_behavior(self):
+        """Scout behavior: move fast with lateral dispersion."""
+        print(f"  [Missile {self.unique_id}] Recce: SCOUT behavior.")
+        self.speed = self.base_speed
+        base_dir = self._get_direction_vector(self.estimated_target_pos)
+
+        # Apply wider lateral offset
+        lateral_offset = random.uniform(-0.3, 0.3)
+        offset_x = -base_dir[1] * lateral_offset
+        offset_y = base_dir[0] * lateral_offset
+
+        new_dir_x = base_dir[0] + offset_x
+        new_dir_y = base_dir[1] + offset_y
+        mag = math.hypot(new_dir_x, new_dir_y)
+
+        self.direction = (new_dir_x / mag, new_dir_y / mag) if mag else (1, 0)
+
+    def _recce_attacker_behavior(self, scout_estimates):
+        """Attacker behavior: loiter until confirmed, then engage and continue refining estimate."""
+        print(f"  [Missile {self.unique_id}] Recce: ATTACKER | State: {self.recce_state.name}")
+
+        if self.recce_state == RecceState.INITIAL_LOITER:
+            self.speed = self.min_speed
+
+            if scout_estimates:
+                self.recce_state = RecceState.CONFIRMED_ATTACK
+                self.speed = self.base_speed
+                print(f"  [Missile {self.unique_id}] Recce: Transitioned to CONFIRMED_ATTACK!")
+
+            self.direction = self._get_direction_vector(self.estimated_target_pos)
+
+        elif self.recce_state == RecceState.CONFIRMED_ATTACK:
+            self.speed = self.base_speed
+
+            # Check sensor for target
+            target = next(agent for agent in self.model.agents if isinstance(agent, TargetAgent))
+            detected, rel_pos = self.sensor.run_detection(self.float_pos, self.direction, target.pos)
+
+            if detected and rel_pos:
+                # Use missile's own sensor for terminal guidance
+                sensed_x = self.float_pos[0] + rel_pos[0]
+                sensed_y = self.float_pos[1] + rel_pos[1]
+                self.estimated_target_pos = [sensed_x, sensed_y]
+                print(f"  [Missile {self.unique_id}] Recce: Using sensor estimate for terminal phase.")
+            else:
+                # Otherwise, continue refining based on scout estimates
+                self._update_estimate_from_scouts(scout_estimates, max_fusion_distance=50)
+
+            self.direction = self._get_direction_vector(self.estimated_target_pos)       
 
     def _split_axis_approach(self):
         """Placeholder for SPLIT_AXIS approach logic."""
         print(f"[Missile {self.unique_id}] Running SPLIT_AXIS approach (placeholder).")
-        self._simple_guidance() # Fallback
+        self._simple_guidance()
 
     def _decoy_behaviour(self):
         """Placeholder for DECOY behaviour logic."""
         print(f"[Missile {self.unique_id}] Running DECOY behaviour (placeholder).")
-        self._simple_guidance() # Fallback
+        self._simple_guidance()
 
 
 class TargetAgent(Agent):
@@ -289,4 +466,3 @@ class TargetAgent(Agent):
 
         self.steps_remaining_in_phase -= 1
         print(f"[Step {self.model.steps}] Target {self.unique_id} - End step. Pos: {self.pos}")
-

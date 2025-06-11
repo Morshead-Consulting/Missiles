@@ -3,8 +3,9 @@ from mesa.space import MultiGrid
 
 from agents import MissileAgent, TargetAgent
 from TargetReportingUnit import TargetReportingUnit
-from swarm_modes import SwarmMode # Import SwarmMode from the new file
-import math # Import math for distance calculation
+from swarm_modes import SwarmMode, MissileType
+import math
+import random
 
 
 class NavalModel(Model):
@@ -19,7 +20,40 @@ class NavalModel(Model):
         self.num_missiles = num_missiles
         self.grid = MultiGrid(width, height, torus=False)
 
-        self.missile_count = 0  # How many missiles launched so far
+        self.missile_count = 0  # Total missiles launched so far
+        self.NUM_WAVES = 3
+        self.SCOUT_RATIO = 0.2
+
+        # New: Pre-calculate the exact number of scouts and attackers
+        if self.swarm_mode == SwarmMode.RECCE:
+            self.total_scouts = max(2, int(self.num_missiles * self.SCOUT_RATIO)) # Ensure at least 2 scouts
+            self.total_attackers = self.num_missiles - self.total_scouts
+            if self.total_attackers < 0: # Ensure we don't have negative attackers if num_missiles is very small
+                self.total_attackers = 0
+                self.total_scouts = self.num_missiles # All become scouts if num_missiles <= 2
+            print(f"Recce Mode: Planning to launch {self.total_scouts} scouts and {self.total_attackers} attackers.")
+        else:
+            self.total_scouts = 0 # Not relevant for other modes
+            self.total_attackers = self.num_missiles
+
+
+        # Counters for launched types (to enforce launch order)
+        self.scouts_launched_count = 0
+        self.attackers_launched_count = 0
+
+
+        # Define sensor capabilities for different missile types
+        self.ATTACKER_SENSOR_PARAMS = {
+            'sensor_range': 30,
+            'sensor_field_of_view_deg': 90,
+            'sensor_noise_std': 0.5
+        }
+        self.SCOUT_SENSOR_PARAMS = {
+            'sensor_range': 60,
+            'sensor_field_of_view_deg': 120,
+            'sensor_noise_std': 0.2
+        }
+
 
         # Create and add the Target agent
         print("Creating the Target...")
@@ -36,30 +70,29 @@ class NavalModel(Model):
         self.agents.add(tru)
         print(f"TRU id {tru.unique_id} has been created at {tru.pos}")
 
-        self.launch_platform_pos = (0, height // 2)  # Single launch point in centre-left
+        self.launch_platform_pos = (0, height // 2)
 
     def step(self):
         print(f"Step {self.steps} starting...")
 
-        # --- Communication Phase (Order matters for coordination) ---
-        # 1. Clear incoming messages for all missiles from previous step
+        # --- Communication Phase ---
         for agent in self.agents:
             if isinstance(agent, MissileAgent):
                 agent.incoming_messages = []
 
-        # 2. Perform broadcast communication (missiles share info with neighbors)
         missile_agents = [agent for agent in self.agents if isinstance(agent, MissileAgent)]
         for sender_missile in missile_agents:
             if not sender_missile.alive:
                 continue
 
-            # Create the message to send
             message_to_send = {
                 'sender_id': sender_missile.unique_id,
                 'sender_pos': sender_missile.pos,
                 'sender_target_estimate': sender_missile.estimated_target_pos,
-                'sender_speed': sender_missile.speed, # Include sender's current speed
-                'sender_fuel': sender_missile.fuel # Include sender's fuel
+                'sender_speed': sender_missile.speed,
+                'sender_fuel': sender_missile.fuel,
+                'sender_wave_id': sender_missile.wave_id,
+                'sender_type': sender_missile.missile_type.value
             }
 
             for receiver_missile in missile_agents:
@@ -87,30 +120,60 @@ class NavalModel(Model):
                 for missile in missile_agents_still_alive:
                     missile.update_target_estimate(tru.latest_estimate)
 
-        # 5. Step all agents (Missiles will now process their newly received messages and adjust speed)
+        # 5. Step all agents
         self.agents.shuffle_do("step")
         print(f"Step {self.steps} completed.")
 
     def launch_missile(self):
         pos = self.launch_platform_pos
-        # Define default min/max speeds for newly launched missiles
         DEFAULT_MIN_MISSILE_SPEED = 0.1
         DEFAULT_MAX_MISSILE_SPEED = 2.0
         
+        current_wave_id = self.missile_count % self.NUM_WAVES
+
+        assigned_missile_type = MissileType.ATTACKER # Default
+
+        # New: Logic to enforce launch order (Scouts first, then Attackers)
+        if self.swarm_mode == SwarmMode.RECCE:
+            if self.scouts_launched_count < self.total_scouts:
+                # Launch a scout
+                assigned_missile_type = MissileType.SCOUT
+                self.scouts_launched_count += 1
+                sensor_params_for_missile = self.SCOUT_SENSOR_PARAMS
+                print(f"Launching Scout {self.scouts_launched_count}/{self.total_scouts}...")
+            elif self.attackers_launched_count < self.total_attackers:
+                # Launch an attacker
+                assigned_missile_type = MissileType.ATTACKER
+                self.attackers_launched_count += 1
+                sensor_params_for_missile = self.ATTACKER_SENSOR_PARAMS
+                print(f"Launching Attacker {self.attackers_launched_count}/{self.total_attackers}...")
+            else:
+                # Should not happen if num_missiles limit is respected
+                print("Warning: Attempted to launch missile beyond total_scouts + total_attackers count.")
+                return # Do not launch
+        else:
+            # For non-Recce modes, use default attacker parameters for all missiles
+            assigned_missile_type = MissileType.ATTACKER
+            sensor_params_for_missile = self.ATTACKER_SENSOR_PARAMS
+
+
         missile = MissileAgent(
             model=self,
             pos=pos,
             direction=None,
-            speed=1, # Base speed of 1
+            speed=1, # Base speed for launch
             fuel=400,
             initial_target_estimate=[90, 15],
             mode=self.swarm_mode,
             comms_range=50,
-            min_speed=DEFAULT_MIN_MISSILE_SPEED, # Pass min_speed
-            max_speed=DEFAULT_MAX_MISSILE_SPEED  # Pass max_speed
+            min_speed=DEFAULT_MIN_MISSILE_SPEED,
+            max_speed=DEFAULT_MAX_MISSILE_SPEED,
+            wave_id=current_wave_id,
+            missile_type=assigned_missile_type,
+            **sensor_params_for_missile
         )
         self.grid.place_agent(missile, pos)
         self.agents.add(missile)
-        print(f"Missile {missile.unique_id} launched at step {self.steps} with pos {missile.pos}")
-        self.missile_count += 1
+        self.missile_count += 1 # Increment total launched missiles
+        print(f"Missile {missile.unique_id} (Type: {missile.missile_type.name}, Wave: {missile.wave_id}) launched at step {self.steps} from {missile.pos}")
 
