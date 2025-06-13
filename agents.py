@@ -598,6 +598,10 @@ class TargetAgent(Agent):
     def step(self):
         print(f"[Step {self.model.steps}] Target {self.unique_id} - Starting step. Pos: {self.pos}")
 
+        if self.pos is None:
+            print(f"[Step {self.model.steps}] Target {self.unique_id} - Skipping step: not on grid.")
+            return  # Don't do anything if the agent is no longer on the grid
+
         if self.steps_remaining_in_phase <= 0:
             self.direction *= -1
             self.steps_remaining_in_phase = random.randint(5, 20)
@@ -614,3 +618,4 @@ class TargetAgent(Agent):
 
         self.steps_remaining_in_phase -= 1
         print(f"[Step {self.model.steps}] Target {self.unique_id} - End step. Pos: {self.pos}")
+
