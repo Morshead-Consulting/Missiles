@@ -93,7 +93,6 @@ class MissileAgent(Agent):
 
         self.speed = self.base_speed
 
-
         # --- Swarm Mode Specific Guidance Logic ---
         if self.mode == SwarmMode.SIMPLE:
             self._simple_guidance()
@@ -114,6 +113,9 @@ class MissileAgent(Agent):
         # --- Apply Speed Constraints ---
         self.speed = max(self.min_speed, min(self.speed, self.max_speed))
 
+        if self.pos is None:
+            print(f"[Step {self.model.steps}] Missile {self.unique_id} - Skipping step: not on grid.")
+            return  # Don't do anything if the agent is no longer on the grid
 
         # --- Common Post-Guidance Logic (Fuel, Movement, Hit Detection) ---
         if self.direction is None:
