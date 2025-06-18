@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import solara
 
-from agents import MissileAgent, TargetAgent
+from base_agent import MissileAgent
+from target_agent import TargetAgent
 from model import NavalModel, SwarmMode
 from TargetReportingUnit import TargetReportingUnit
 from swarm_modes import MissileType # Import MissileType to check agent role
@@ -25,7 +26,7 @@ model = solara.reactive(
         height=HEIGHT,
         num_missiles=NUM_MISSILES,
         launch_interval=LAUNCH_INTERVAL,
-        swarm_mode=SwarmMode.DECOY
+        swarm_mode=SwarmMode.SPLIT_AXIS
     )
 )
 running = solara.reactive(False)

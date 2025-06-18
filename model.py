@@ -1,7 +1,8 @@
 from mesa.model import Model
 from mesa.space import MultiGrid
 
-from agents import MissileAgent, TargetAgent
+from base_agent import MissileAgent
+from target_agent import TargetAgent
 from TargetReportingUnit import TargetReportingUnit
 from swarm_modes import SwarmMode, MissileType
 import math
