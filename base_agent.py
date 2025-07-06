@@ -8,7 +8,7 @@ from target_agent import TargetAgent
 
 class MissileAgent(Agent):
     def __init__(self, model, pos, direction, speed, fuel, initial_target_estimate=None, mode=None, comms_range=50,
-                 min_speed=0.1, max_speed=2.0, wave_id=0, missile_type=None, # missile_type is from swarm_modes, not here
+                 min_speed=0.1, max_speed=2.0, wave_id=0, missile_type=None,
                  sensor_range=30, sensor_field_of_view_deg=90, sensor_noise_std=0.5):
         super().__init__(model)
 
@@ -29,42 +29,32 @@ class MissileAgent(Agent):
         self.comms_range = comms_range
         self.incoming_messages = []
 
-        # MissileType and RecceState remain properties of MissileAgent
-        # but RecceState is only relevant for attackers in Recce mode
         self.missile_type = missile_type
-        self.recce_state = None # Will be set to RecceState.INITIAL_LOITER if mode is RECCE and type is ATTACKER
-
+        self.recce_state = None
 
         if initial_target_estimate is not None:
             self.estimated_target_pos = list(initial_target_estimate)
         else:
             self.estimated_target_pos = None
 
-        self.sensor_switch_distance = 20.0 # Distance for missile's own sensor to activate
+        self.sensor_switch_distance = 20.0
 
     def update_target_estimate(self, new_estimate):
-        """Updates the missile's internal estimate of the target's position."""
         self.estimated_target_pos = list(new_estimate)
 
     def _receive_message(self, message):
-        """Adds an incoming message to the missile's buffer."""
         self.incoming_messages.append(message)
 
     def _get_direction_vector(self, target_coord):
-        """
-        Calculates a normalized direction vector from the missile's current position
-        towards a target coordinate. Ensures the vector is never (0,0) to prevent stalling.
-        """
         if target_coord is None:
-            return (1, 0) # Default to forward if no target specified
+            return (1, 0)
 
         dx = target_coord[0] - self.float_pos[0]
         dy = target_coord[1] - self.float_pos[1]
         
         distance = math.hypot(dx, dy)
 
-        # If the distance is extremely small, add a slight random perturbation
-        if distance < 1e-6: # Using a very small epsilon (e.g., 0.000001)
+        if distance < 1e-6:
             perturb_x = random.uniform(-0.1, 0.1)
             perturb_y = random.uniform(-0.1, 0.1)
             
@@ -75,26 +65,17 @@ class MissileAgent(Agent):
             if new_mag > 0:
                 return (new_dir_x / new_mag, new_dir_y / new_mag)
             else:
-                return (1, 0) # Fallback if perturbation results in zero vector
+                return (1, 0)
 
         return (dx / distance, dy / distance)
 
-    def step(self):
+    def perform_guidance(self):
         """
-        Advances the missile's state by one step.
-        Dispatches to different guidance logics based on the swarm mode.
-        Handles common aspects like fuel consumption, movement, and hit detection.
+        Chooses the missile's direction based on its swarm mode.
+        For RL mode, this method does nothing as the RL agent will set its own direction.
         """
-        print(f"[Step {self.model.steps}] Missile {self.unique_id} - Starting step. Pos: {self.pos}, Fuel: {self.fuel}, Alive: {self.alive}, Mode: {self.mode}, Type: {self.missile_type.name}")
+        self.speed = self.base_speed # Reset speed for guidance, can be modified by guidance logic
 
-        if not self.alive:
-            print(f"[Missile {self.unique_id}] Inactive. Skipping step.")
-            return
-
-        self.speed = self.base_speed
-
-        # --- Dispatch to external guidance strategies ---
-       
         if self.mode == SwarmMode.SIMPLE:
             from guidance_strategies import simple_guidance
             simple_guidance(self)
@@ -113,18 +94,24 @@ class MissileAgent(Agent):
         elif self.mode == SwarmMode.DECOY:
             from guidance_strategies import decoy_behaviour
             decoy_behaviour(self)
+        elif self.mode == SwarmMode.RL:
+            # For RL mode, the RL agent will handle direction and speed
+            pass
         else:
             print(f"[Missile {self.unique_id}] Warning: Unknown swarm mode '{self.mode}'. Falling back to simple guidance.")
             from guidance_strategies import simple_guidance
             simple_guidance(self)
-
-        # --- Apply Speed Constraints ---
+        
+        # Apply Speed Constraints after guidance might have changed speed
         self.speed = max(self.min_speed, min(self.speed, self.max_speed))
 
 
-        # --- Common Post-Guidance Logic (Fuel, Movement, Hit Detection) ---
+    def move_and_check_hit(self):
+        """
+        Applies speed, consumes fuel, moves the missile, and checks for hits.
+        """
         if self.direction is None:
-            print(f"[Missile {self.unique_id}] ERROR: No direction set after guidance for mode {self.mode}. Stopping missile.")
+            print(f"[Missile {self.unique_id}] ERROR: No direction set. Stopping missile.")
             self.alive = False
             self.model.agents.remove(self)
             self.model.grid.remove_agent(self)
@@ -159,7 +146,7 @@ class MissileAgent(Agent):
 
         cellmates = self.model.grid.get_cell_list_contents([new_pos])
         for other in cellmates:
-            if isinstance(other, TargetAgent): # TargetAgent will be imported from target_agent.py
+            if isinstance(other, TargetAgent):
                 self.exploded = True
                 self.alive = False
                 self.model.agents.remove(self)
@@ -167,5 +154,18 @@ class MissileAgent(Agent):
                 print(f"[Missile {self.unique_id}] HIT! Target destroyed at {new_pos}.")
                 return
 
-        print(f"[Step {self.model.steps}] Missile {self.unique_id} - End step. Pos: {self.pos}, Dir: {self.direction}, Estimate: {self.estimated_target_pos}, Exploded: {self.exploded}")
+    def step(self):
+        """
+        Advances the missile's state by one step.
+        Calls perform_guidance() and then move_and_check_hit().
+        """
+        print(f"[Step {self.model.steps}] Missile {self.unique_id} - Starting step. Pos: {self.pos}, Fuel: {self.fuel}, Alive: {self.alive}, Mode: {self.mode}, Type: {self.missile_type.name}")
 
+        if not self.alive:
+            print(f"[Missile {self.unique_id}] Inactive. Skipping step.")
+            return
+        
+        self.perform_guidance()
+        self.move_and_check_hit()
+
+        print(f"[Step {self.model.steps}] Missile {self.unique_id} - End step. Pos: {self.pos}, Dir: {self.direction}, Estimate: {self.estimated_target_pos}, Exploded: {self.exploded}")

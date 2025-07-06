@@ -1,8 +1,8 @@
 import numpy as np
 import math
 import random
-from agents import MissileAgent
-from swarm_modes import MissileType
+from base_agent import MissileAgent
+from swarm_modes import MissileType # Ensure MissileType is correctly imported
 
 class MissileRLAgent(MissileAgent):
     def __init__(self, *args, **kwargs):
@@ -19,13 +19,17 @@ class MissileRLAgent(MissileAgent):
         obs = self.get_observation()
         
         # Policy selects action
-        self.action = self.select_action(obs)  # You can override or connect this to an RL model
+        # This is where your RL model integration would go.
+        # For now, it uses the placeholder random action.
+        self.action = self.select_action(obs)
         
-        # ACTION SPACE
+        # ACTION SPACE: Apply the selected action
         self.apply_action(self.action)
 
-        # Run guidance logic, movement, and targt check
-        super().step()
+        # Run common movement logic and target check from base class
+        # We call move_and_check_hit directly, bypassing base_agent's perform_guidance
+        # because the RL agent's apply_action already sets speed and direction.
+        super().move_and_check_hit()
 
         # Reward signal
         self.reward = self.get_reward()
@@ -59,7 +63,7 @@ class MissileRLAgent(MissileAgent):
         0 = forward, 1 = left, 2 = right, 3 = slow down, 4 = speed up
         """
         if action == 0:
-            pass  # Maintain current direction
+            pass  # Maintain current direction and speed
         elif action == 1:
             self.direction = self._rotate_vector(self.direction, -0.2)
         elif action == 2:
@@ -70,8 +74,6 @@ class MissileRLAgent(MissileAgent):
             self.speed = min(self.max_speed, self.speed + 0.1)
 
     # REWARD SIGNAL: Calculate reward after applying action
-    # This is a simple reward function based on distance to target
-    # and whether the missile has exploded or not.
     def get_reward(self):
         if self.exploded:
             return 100.0
