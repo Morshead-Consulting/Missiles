@@ -21,8 +21,8 @@ LAUNCH_INTERVAL = 10
 # --- Solara Reactive States ---
 step_count = solara.reactive(0)
 # This is where we define the model with the initial parameters
-# The default is setting the the swarm mode set to SPLIT_AXIS for demonstration purposes
-# swarm_mode=SwarmMode.SPLIT_AXIS
+# The default is setting the swarm mode set to SPLIT_AXIS for demonstration purposes
+# See seven lines below: swarm_mode=SwarmMode.SPLIT_AXIS
 model = solara.reactive(
     NavalModel(
         width=WIDTH,
