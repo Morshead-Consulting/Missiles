@@ -8,6 +8,7 @@ class SwarmMode(Enum):
     RECCE = 4
     SPLIT_AXIS = 5
     DECOY = 6
+    RL = 7
 
 
 class MissileType(Enum):

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import solara
 
+from missile_rl_agent import MissileRLAgent
 from base_agent import MissileAgent
 from target_agent import TargetAgent
 from model import NavalModel, SwarmMode
@@ -21,15 +22,15 @@ LAUNCH_INTERVAL = 10
 # --- Solara Reactive States ---
 step_count = solara.reactive(0)
 # This is where we define the model with the initial parameters
-# The default is setting the swarm mode set to SPLIT_AXIS for demonstration purposes
-# See seven lines below: swarm_mode=SwarmMode.SPLIT_AXIS
+# This is where the swarm mode is set
+# See seven lines below e.g. swarm_mode=SwarmMode.SPLIT_AXIS
 model = solara.reactive(
     NavalModel(
         width=WIDTH,
         height=HEIGHT,
         num_missiles=NUM_MISSILES,
         launch_interval=LAUNCH_INTERVAL,
-        swarm_mode=SwarmMode.SPLIT_AXIS
+        swarm_mode=SwarmMode.RL # Change to SwarmMode.RECCE for Recce Mode or any other mode you want to test
     )
 )
 running = solara.reactive(False)
@@ -51,7 +52,7 @@ def MissileGrid():
     ax.set_aspect("equal")
 
     for agent in model.value.agents:
-        if isinstance(agent, MissileAgent):
+        if isinstance(agent, (MissileAgent, MissileRLAgent)):
             # Determine color based on missile state and type
             if agent.exploded:
                 color = "red" # Exploded missiles are red

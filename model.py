@@ -5,6 +5,7 @@ from base_agent import MissileAgent
 from target_agent import TargetAgent
 from TargetReportingUnit import TargetReportingUnit
 from swarm_modes import SwarmMode, MissileType
+from missile_rl_agent import MissileRLAgent
 import math
 import random
 
@@ -157,8 +158,13 @@ class NavalModel(Model):
             assigned_missile_type = MissileType.ATTACKER
             sensor_params_for_missile = self.ATTACKER_SENSOR_PARAMS
 
+        # Choose the appropriate missile class
+        if self.swarm_mode == SwarmMode.RL:
+            missile_class = MissileRLAgent
+        else:
+            missile_class = MissileAgent
 
-        missile = MissileAgent(
+        missile = missile_class(
             model=self,
             pos=pos,
             direction=None,
