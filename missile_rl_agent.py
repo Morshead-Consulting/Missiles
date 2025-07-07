@@ -2,7 +2,6 @@ import numpy as np
 import math
 import random
 from base_agent import MissileAgent
-from swarm_modes import MissileType # Ensure MissileType is correctly imported
 
 class MissileRLAgent(MissileAgent):
     def __init__(self, *args, **kwargs):

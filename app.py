@@ -3,7 +3,6 @@ import time
 import traceback
 
 import matplotlib.pyplot as plt
-import numpy as np
 import solara
 
 from missile_rl_agent import MissileRLAgent
@@ -30,7 +29,7 @@ model = solara.reactive(
         height=HEIGHT,
         num_missiles=NUM_MISSILES,
         launch_interval=LAUNCH_INTERVAL,
-        swarm_mode=SwarmMode.RL # Change to SwarmMode.RECCE for Recce Mode or any other mode you want to test
+        swarm_mode=SwarmMode.WAVE # Change to SwarmMode.RECCE for Recce Mode or any other mode you want to test
     )
 )
 running = solara.reactive(False)
@@ -139,12 +138,9 @@ def MissileDashboard():
             solara.Button("Pause" if running.value else "Play", on_click=toggle_play_pause)
             solara.Button("Reset", on_click=reset)
 
-        with solara.Row(style={"alignItems": "center", "gap": "10px"}):
-            solara.Markdown("**Speed:**", style={"margin": "0"})
-
             with solara.Column(style={"width": "200px"}):
                 solara.SliderFloat(
-                    label=None,
+                    label="Speed",
                     value=speed_slider,
                     min=0,
                     max=1,
@@ -152,9 +148,6 @@ def MissileDashboard():
                     thumb_label=True
                 )
                 solara.Text(f"{(2.0 - speed_slider.value * 1.9):.2f} sec delay", style={"fontSize": "0.8em", "textAlign": "center"})
-
-            solara.Markdown("Slow", style={"fontSize": "0.8em", "margin": "0"})
-            solara.Markdown("Fast", style={"fontSize": "0.8em", "margin": "0"})
 
 
 @solara.component

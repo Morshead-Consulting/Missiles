@@ -7,7 +7,6 @@ from TargetReportingUnit import TargetReportingUnit
 from swarm_modes import SwarmMode, MissileType
 from missile_rl_agent import MissileRLAgent
 import math
-import random
 
 
 class NavalModel(Model):
