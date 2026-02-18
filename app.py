@@ -130,7 +130,7 @@ def MissileDashboard():
         running.value = False
 
     with solara.Column():
-        solara.Markdown(f"**Step:** {step_count.value}")
+        solara.Markdown(f"**Step:** {step_count.value} &nbsp;&nbsp; **Mode:** {model.value.swarm_mode.name}")
         MissileGrid()
 
         with solara.Row():
