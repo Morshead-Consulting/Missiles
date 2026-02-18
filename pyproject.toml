@@ -8,13 +8,12 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "mesa (>=3.2.0,<4.0.0)",
-    "matplotlib (>=3.10.3,<4.0.0)",
-    "solara (>=1.50.0,<2.0.0)",
-    "scipy (>=1.16.0,<2.0.0)"
+    "mesa>=3.2.0,<4.0.0",
+    "matplotlib>=3.10.3,<4.0.0",
+    "solara>=1.50.0,<2.0.0",
+    "scipy>=1.16.0,<2.0.0"
 ]
 
 
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+package = false
