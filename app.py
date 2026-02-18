@@ -34,6 +34,7 @@ model = solara.reactive(
 )
 running = solara.reactive(False)
 speed_slider = solara.reactive(0.5)
+selected_mode = solara.reactive(SwarmMode.WAVE.name)
 
 grid_width = model.value.grid.width
 grid_height = model.value.grid.height
@@ -118,16 +119,19 @@ def MissileDashboard():
 
     def reset():
         print("Resetting simulation.")
-        # Ensure reset uses the same configuration as initial setup for consistency
+        running.value = False
         model.value = NavalModel(
             width=WIDTH,
             height=HEIGHT,
             num_missiles=NUM_MISSILES,
             launch_interval=LAUNCH_INTERVAL,
-            swarm_mode=SwarmMode.RECCE # Reset to RECCE mode by default or set to your desired default
+            swarm_mode=SwarmMode[selected_mode.value]
         )
         step_count.value = 0
-        running.value = False
+
+    def on_mode_change(name):
+        selected_mode.value = name
+        reset()
 
     with solara.Column():
         solara.Markdown(f"**Step:** {step_count.value} &nbsp;&nbsp; **Mode:** {model.value.swarm_mode.name}")
@@ -137,6 +141,12 @@ def MissileDashboard():
             solara.Button("Step", on_click=step)
             solara.Button("Pause" if running.value else "Play", on_click=toggle_play_pause)
             solara.Button("Reset", on_click=reset)
+            solara.Select(
+                label="Swarm Mode",
+                value=selected_mode,
+                values=[m.name for m in SwarmMode],
+                on_value=on_mode_change
+            )
 
             with solara.Column(style={"width": "200px"}):
                 solara.SliderFloat(
