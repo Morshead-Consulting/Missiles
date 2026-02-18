@@ -5,7 +5,6 @@ from mesa import Agent
 class TargetAgent(Agent):
     def __init__(self, model, pos, speed=1):
         super().__init__(model)
-        self.pos = pos
         self.float_y = pos[1]
         self.speed = speed
 

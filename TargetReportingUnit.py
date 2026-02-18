@@ -13,7 +13,6 @@ class TargetReportingUnit(Agent):
     """
     def __init__(self, model, pos, direction, speed=0): # TRU is stationary, speed is 0
         super().__init__(model)
-        self.pos = pos
         self.direction = direction if direction is not None else (1, 0) # Direction might be used for FOV orientation
         self.speed = speed
         self.latest_estimate = None # Stores the latest known position of the target
@@ -25,7 +24,7 @@ class TargetReportingUnit(Agent):
         self.update_interval = 5 # Update every 5 steps
         self.last_update_step = -self.update_interval
 
-        print(f"TRU {self.unique_id} initialized at {self.pos} with sensor range {self.sensor.range}.")
+        print(f"TRU {self.unique_id} initialized with sensor range {self.sensor.range}.")
 
     def _get_target(self):
         """Helper to find the TargetAgent in the model."""
