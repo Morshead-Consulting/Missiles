@@ -1,4 +1,8 @@
-To run the model interactively, in this directory, run the following command
+Updated so that the Swarm mode can be chosen directly from the visualisation.
+
+Use python start.py to start the app.
+
+[To run the model interactively, in this directory, run the following command
 $ solara run app.py
 
 Set the swarm mode in app.py
@@ -7,4 +11,4 @@ At line 33 set swarm_mode=SwarmMode.XXXX and use the options corresponding to sw
 
 e.g. if the required swarm_mode is RECCE then use swarm_mode=SwarmMode.RECCE
 
-e.g. if the required swarm_mode is DECOY then use swarm_mode=SwarmMode.DECOY
+e.g. if the required swarm_mode is DECOY then use swarm_mode=SwarmMode.DECOY]
